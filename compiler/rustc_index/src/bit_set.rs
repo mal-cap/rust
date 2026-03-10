@@ -1115,7 +1115,7 @@ where
 
     // These subchunks are smaller than full `ChunkedBitSet` chunks, so that
     // we still have some chance of stopping early.
-    const SUBCHUNK_LEN: usize = 32 / size_of::<Word>();
+    const SUBCHUNK_LEN: usize = 64 / size_of::<Word>();
     let (lhs_chunks, lhs_tail) = lhs.as_chunks::<SUBCHUNK_LEN>();
     let (rhs_chunks, rhs_tail) = rhs.as_chunks::<SUBCHUNK_LEN>();
 
