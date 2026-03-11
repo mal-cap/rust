@@ -18,6 +18,10 @@
 
 pub mod wasmos;
 
+#[cfg(target_os = "wasmos")]
+pub mod os;
+
+#[cfg(not(target_os = "wasmos"))]
 #[path = "../unsupported/os.rs"]
 pub mod os;
 

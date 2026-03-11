@@ -18,6 +18,10 @@ cfg_select! {
         mod uefi;
         use uefi as imp;
     }
+    target_os = "wasmos" => {
+        mod wasmos;
+        use wasmos as imp;
+    }
     any(
         target_os = "teeos",
         target_family = "unix",

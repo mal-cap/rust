@@ -300,6 +300,10 @@ impl OpenOptions {
 }
 
 impl File {
+    pub(crate) fn raw_fd(&self) -> i32 {
+        self.fd
+    }
+
     pub fn open(path: &Path, opts: &OpenOptions) -> io::Result<File> {
         let flags = opts.access_flags()? | opts.creation_flags()?;
         let fd = wasmos::open(path.as_os_str(), flags).map_err(wasmos::io_error)?;
