@@ -4,6 +4,10 @@
 #![allow(missing_debug_implementations)]
 
 cfg_select! {
+    target_os = "wasmos" => {
+        mod wasm;
+        pub use self::wasm::*;
+    }
     unix => {
         mod unix;
         pub use self::unix::*;

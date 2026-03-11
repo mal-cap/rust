@@ -17,6 +17,10 @@ cfg_select! {
         mod wasip1;
         pub use wasip1::*;
     }
+    target_os = "wasmos" => {
+        mod wasmos;
+        pub use wasmos::*;
+    }
     target_os = "motor" => {
         mod motor;
         pub use motor::*;

@@ -16,6 +16,10 @@
 mod common;
 
 cfg_select! {
+    target_os = "wasmos" => {
+        mod wasmos;
+        pub use wasmos::*;
+    }
     target_family = "unix" => {
         mod unix;
         pub use unix::*;
@@ -47,10 +51,6 @@ cfg_select! {
     target_os = "wasi" => {
         mod wasi;
         pub use wasi::*;
-    }
-    target_os = "wasmos" => {
-        mod wasmos;
-        pub use wasmos::*;
     }
     target_os = "xous" => {
         mod xous;

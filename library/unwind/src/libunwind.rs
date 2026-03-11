@@ -75,7 +75,7 @@ pub const unwinder_private_data_size: usize = 2;
 #[cfg(all(target_arch = "wasm32", target_os = "emscripten"))]
 pub const unwinder_private_data_size: usize = 20;
 
-#[cfg(all(target_arch = "wasm32", target_os = "linux"))]
+#[cfg(all(target_arch = "wasm32", any(target_os = "linux", target_os = "wasmos")))]
 pub const unwinder_private_data_size: usize = 2;
 
 #[cfg(target_arch = "hexagon")]

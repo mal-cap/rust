@@ -15,6 +15,10 @@
 mod common;
 
 cfg_select! {
+    target_os = "wasmos" => {
+        mod wasmos;
+        pub use wasmos::*;
+    }
     any(
         all(target_family = "unix", not(any(target_os = "espidf", target_os = "vita"))),
         target_os = "hermit",
@@ -37,10 +41,6 @@ cfg_select! {
     target_os = "uefi" => {
         mod uefi;
         pub use uefi::*;
-    }
-    target_os = "wasmos" => {
-        mod wasmos;
-        pub use wasmos::*;
     }
     all(target_os = "wasi", target_env = "p1") => {
         mod wasip1;

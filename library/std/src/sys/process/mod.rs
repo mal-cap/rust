@@ -1,4 +1,8 @@
 cfg_select! {
+    target_os = "wasmos" => {
+        mod wasmos;
+        use wasmos as imp;
+    }
     target_family = "unix" => {
         mod unix;
         use unix as imp;
@@ -14,10 +18,6 @@ cfg_select! {
     target_os = "motor" => {
         mod motor;
         use motor as imp;
-    }
-    target_os = "wasmos" => {
-        mod wasmos;
-        use wasmos as imp;
     }
     _ => {
         mod unsupported;

@@ -9,6 +9,7 @@ cfg_select! {
     target_os = "wasmos" => {
         mod wasmos;
         use wasmos as imp;
+        use crate::sys::helpers::run_path_with_cstr as with_native_path;
     }
     any(target_family = "unix", target_os = "wasi") => {
         mod unix;

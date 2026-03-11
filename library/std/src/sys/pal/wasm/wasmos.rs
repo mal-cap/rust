@@ -5,9 +5,12 @@ pub type Errno = i32;
 
 pub const EBADF: Errno = 9;
 pub const ECHILD: Errno = 10;
+pub const EAGAIN: Errno = 11;
+pub const EINTR: Errno = 4;
 pub const EINVAL: Errno = 22;
 pub const ENOENT: Errno = 2;
 pub const ENOSYS: Errno = 38;
+pub const ETIMEDOUT: Errno = 110;
 
 pub const O_RDONLY: u32 = 0;
 pub const O_WRONLY: u32 = 1;
@@ -36,8 +39,18 @@ const SYS_CHDIR: i32 = 36;
 const SYS_GETCWD: i32 = 37;
 const SYS_LINK: i32 = 38;
 const SYS_SYMLINK: i32 = 39;
+const SYS_FUTEX_WAIT: i32 = 46;
+const SYS_FUTEX_WAKE: i32 = 47;
 const SYS_CLOCK_GETTIME: i32 = 50;
 const SYS_NANOSLEEP: i32 = 51;
+const SYS_SOCKET: i32 = 60;
+const SYS_BIND: i32 = 61;
+const SYS_LISTEN: i32 = 62;
+const SYS_ACCEPT: i32 = 63;
+const SYS_CONNECT: i32 = 64;
+const SYS_SEND: i32 = 65;
+const SYS_RECV: i32 = 66;
+const SYS_DNS_RESOLVE: i32 = 67;
 const SYS_GETARGC: i32 = 71;
 const SYS_GETARG: i32 = 72;
 const SYS_CHMOD: i32 = 73;
@@ -49,19 +62,25 @@ const SYS_READLINK: i32 = 80;
 const SYS_WAIT: i32 = 3;
 const SYS_GETPID: i32 = 4;
 const SYS_KILL: i32 = 6;
+const SYS_YIELD: i32 = 7;
 const SYS_GETENV: i32 = 8;
 const SYS_SETENV: i32 = 9;
 const SYS_POLL: i32 = 90;
+const SYS_CLONE: i32 = 123;
+const SYS_GETTID: i32 = 124;
 const SYS_POSIX_SPAWN: i32 = 134;
 const SYS_UNSETENV: i32 = 135;
 
 pub const WAIT_WNOHANG: i32 = 0x1;
 pub const CLOCK_MONOTONIC: u32 = 0;
 pub const CLOCK_REALTIME: u32 = 1;
+pub const AF_INET: i32 = 2;
+pub const SOCK_STREAM: i32 = 1;
 pub const POLLIN: i16 = 0x0001;
 pub const POLLOUT: i16 = 0x0004;
 pub const POLLERR: i16 = 0x0008;
 pub const POLLHUP: i16 = 0x0010;
+pub const FUTEX_WAIT_FOREVER: u32 = u32::MAX;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
@@ -270,6 +289,51 @@ pub fn sleep_ms(ms: u32) {
     let _ = call(SYS_NANOSLEEP, ms as i32, 0, 0, 0, 0, 0);
 }
 
+pub fn yield_now() {
+    let _ = call(SYS_YIELD, 0, 0, 0, 0, 0, 0);
+}
+
+pub fn socket(domain: i32, socket_type: i32, protocol: i32) -> Result<i32, Errno> {
+    call(SYS_SOCKET, domain, socket_type, protocol, 0, 0, 0)
+}
+
+pub fn bind(fd: i32, addr: &str) -> Result<(), Errno> {
+    call(SYS_BIND, fd, addr.as_ptr() as i32, addr.len() as i32, 0, 0, 0).map(|_| ())
+}
+
+pub fn listen(fd: i32, backlog: i32) -> Result<(), Errno> {
+    call(SYS_LISTEN, fd, backlog, 0, 0, 0, 0).map(|_| ())
+}
+
+pub fn accept(fd: i32) -> Result<i32, Errno> {
+    call(SYS_ACCEPT, fd, 0, 0, 0, 0, 0)
+}
+
+pub fn connect(fd: i32, addr: &str) -> Result<(), Errno> {
+    call(SYS_CONNECT, fd, addr.as_ptr() as i32, addr.len() as i32, 0, 0, 0).map(|_| ())
+}
+
+pub fn send(fd: i32, buf: &[u8], flags: i32) -> Result<usize, Errno> {
+    call(SYS_SEND, fd, buf.as_ptr() as i32, buf.len() as i32, flags, 0, 0).map(|v| v as usize)
+}
+
+pub fn recv(fd: i32, buf: &mut [u8], flags: i32) -> Result<usize, Errno> {
+    call(SYS_RECV, fd, buf.as_mut_ptr() as i32, buf.len() as i32, flags, 0, 0).map(|v| v as usize)
+}
+
+pub fn dns_resolve(host: &str, out: &mut [u8]) -> Result<usize, Errno> {
+    call(
+        SYS_DNS_RESOLVE,
+        host.as_ptr() as i32,
+        host.len() as i32,
+        out.as_mut_ptr() as i32,
+        out.len() as i32,
+        0,
+        0,
+    )
+    .map(|v| v as usize)
+}
+
 pub fn getenv(name: &OsStr, buf: &mut [u8]) -> Result<usize, Errno> {
     call_path(name, |ptr, len| {
         call(
@@ -310,6 +374,55 @@ pub fn listenv(buf: &mut [u8]) -> Result<usize, Errno> {
 
 pub fn getpid() -> u32 {
     call(SYS_GETPID, 0, 0, 0, 0, 0, 0).unwrap_or_default() as u32
+}
+
+pub fn gettid() -> Result<u32, Errno> {
+    call(SYS_GETTID, 0, 0, 0, 0, 0, 0).map(|v| v as u32)
+}
+
+pub fn clone_thread(
+    flags: u32,
+    stack_ptr: u32,
+    parent_tid: *mut i32,
+    tls: u32,
+    child_tid: *mut i32,
+) -> Result<u32, Errno> {
+    call(
+        SYS_CLONE,
+        flags as i32,
+        stack_ptr as i32,
+        parent_tid as i32,
+        tls as i32,
+        child_tid as i32,
+        0,
+    )
+    .map(|v| v as u32)
+}
+
+pub fn futex_wait(addr: *mut i32, expected: u32, timeout_ticks: u32) -> Result<(), Errno> {
+    call(
+        SYS_FUTEX_WAIT,
+        addr as i32,
+        expected as i32,
+        0,
+        timeout_ticks as i32,
+        0,
+        0,
+    )
+    .map(|_| ())
+}
+
+pub fn futex_wake(addr: *mut i32, count: u32) -> Result<u32, Errno> {
+    call(
+        SYS_FUTEX_WAKE,
+        addr as i32,
+        count as i32,
+        0,
+        0,
+        0,
+        0,
+    )
+    .map(|v| v as u32)
 }
 
 pub fn waitpid(pid: i32, status: &mut i32) -> Result<i32, Errno> {

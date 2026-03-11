@@ -8,6 +8,10 @@ cfg_select! {
         mod windows;
         pub use windows::hostname;
     }
+    target_os = "wasmos" => {
+        mod wasmos;
+        pub use wasmos::hostname;
+    }
     _ => {
         mod unsupported;
         pub use unsupported::hostname;
