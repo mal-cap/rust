@@ -6,6 +6,10 @@ use crate::path::{Path, PathBuf};
 pub mod common;
 
 cfg_select! {
+    target_os = "wasmos" => {
+        mod wasmos;
+        use wasmos as imp;
+    }
     any(target_family = "unix", target_os = "wasi") => {
         mod unix;
         use unix as imp;

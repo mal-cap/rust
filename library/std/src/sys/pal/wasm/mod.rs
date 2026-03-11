@@ -16,6 +16,8 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+pub mod wasmos;
+
 #[path = "../unsupported/os.rs"]
 pub mod os;
 

@@ -1,6 +1,10 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 cfg_select! {
+    target_os = "wasmos" => {
+        mod wasmos;
+        pub use wasmos::*;
+    }
     any(target_family = "unix", target_os = "hermit", target_os = "wasi") => {
         mod unix;
         pub use unix::*;
