@@ -1,4 +1,8 @@
 cfg_select! {
+    target_os = "wasmos" => {
+        mod wasmos;
+        pub use wasmos::*;
+    }
     target_os = "hermit" => {
         mod hermit;
         pub use hermit::*;
