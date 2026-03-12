@@ -4,7 +4,7 @@ pub(crate) fn target() -> Target {
     let mut options = base::wasm::options();
     options.os = Os::Other("wasmos".into());
     options.env = Env::Musl;
-    options.families = cvs!["wasm", "unix"];
+    options.families = cvs!["wasm"];
 
     options.add_pre_link_args(
         LinkerFlavor::WasmLld(Cc::No),

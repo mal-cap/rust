@@ -56,7 +56,7 @@ cfg_select! {
     }
 }
 
-#[cfg(target_env = "musl")]
+#[cfg(all(target_env = "musl", not(target_os = "wasmos")))]
 cfg_select! {
     all(feature = "llvm-libunwind", feature = "system-llvm-libunwind") => {
         compile_error!("`llvm-libunwind` and `system-llvm-libunwind` cannot be enabled at the same time");
@@ -78,7 +78,7 @@ cfg_select! {
 }
 
 // Hexagon with musl uses llvm-libunwind by default
-#[cfg(all(target_env = "musl", target_arch = "hexagon"))]
+#[cfg(all(target_env = "musl", target_arch = "hexagon", not(target_os = "wasmos")))]
 cfg_select! {
     feature = "llvm-libunwind" => {
         #[link(name = "unwind", kind = "static", modifiers = "-bundle")]

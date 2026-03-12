@@ -146,7 +146,7 @@ pub extern "C" fn wasmos_clone_trampoline(
         asm!(
             "local.get {stack}",
             "global.set __stack_pointer",
-            stack = in(reg) stack as i32,
+            stack = in(local) stack as i32,
         );
     }
     let _ = func(arg);
