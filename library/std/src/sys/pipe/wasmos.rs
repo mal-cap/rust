@@ -2,7 +2,10 @@
 
 use crate::fmt;
 use crate::io::{self, BorrowedCursor, IoSlice, IoSliceMut};
+use crate::mem::ManuallyDrop;
+use crate::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use crate::sys::wasmos;
+use crate::sys::{FromInner, IntoInner};
 
 pub struct Pipe {
     fd: i32,
@@ -99,5 +102,42 @@ impl Drop for Pipe {
 impl fmt::Debug for Pipe {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Pipe").field("fd", &self.fd).finish()
+    }
+}
+
+impl IntoInner<OwnedFd> for Pipe {
+    fn into_inner(self) -> OwnedFd {
+        let fd = ManuallyDrop::new(self).fd;
+        unsafe { OwnedFd::from_raw_fd(fd) }
+    }
+}
+
+impl FromInner<OwnedFd> for Pipe {
+    fn from_inner(fd: OwnedFd) -> Self {
+        Self { fd: fd.into_raw_fd() }
+    }
+}
+
+impl AsFd for Pipe {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(self.fd) }
+    }
+}
+
+impl AsRawFd for Pipe {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd
+    }
+}
+
+impl IntoRawFd for Pipe {
+    fn into_raw_fd(self) -> RawFd {
+        ManuallyDrop::new(self).fd
+    }
+}
+
+impl FromRawFd for Pipe {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self { fd }
     }
 }

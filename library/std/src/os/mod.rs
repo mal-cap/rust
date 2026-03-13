@@ -189,6 +189,7 @@ pub mod xous;
     target_os = "hermit",
     target_os = "trusty",
     target_os = "wasi",
+    target_os = "wasmos",
     target_os = "motor",
     doc
 ))]

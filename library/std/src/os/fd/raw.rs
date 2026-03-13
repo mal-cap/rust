@@ -4,17 +4,19 @@
 
 #[cfg(target_os = "hermit")]
 use hermit_abi as libc;
+#[cfg(target_os = "wasmos")]
+use crate::sys::wasmos as libc;
 #[cfg(target_os = "motor")]
 use moto_rt::libc;
 
-#[cfg(target_os = "motor")]
+#[cfg(any(target_os = "wasmos", target_os = "motor"))]
 use super::owned::OwnedFd;
 #[cfg(not(target_os = "trusty"))]
 use crate::fs;
 use crate::io;
 #[cfg(target_os = "hermit")]
 use crate::os::hermit::io::OwnedFd;
-#[cfg(all(not(target_os = "hermit"), not(target_os = "motor")))]
+#[cfg(all(not(target_os = "hermit"), not(target_os = "wasmos"), not(target_os = "motor")))]
 use crate::os::raw;
 #[cfg(all(doc, not(target_arch = "wasm32")))]
 use crate::os::unix::io::AsFd;
@@ -27,10 +29,10 @@ use crate::sys::{AsInner, FromInner, IntoInner};
 
 /// Raw file descriptors.
 #[stable(feature = "rust1", since = "1.0.0")]
-#[cfg(all(not(target_os = "hermit"), not(target_os = "motor")))]
+#[cfg(all(not(target_os = "hermit"), not(target_os = "wasmos"), not(target_os = "motor")))]
 pub type RawFd = raw::c_int;
 #[stable(feature = "rust1", since = "1.0.0")]
-#[cfg(any(target_os = "hermit", target_os = "motor"))]
+#[cfg(any(target_os = "hermit", target_os = "wasmos", target_os = "motor"))]
 pub type RawFd = i32;
 
 /// A trait to extract the raw file descriptor from an underlying object.
@@ -168,7 +170,7 @@ impl FromRawFd for RawFd {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-#[cfg(not(target_os = "trusty"))]
+#[cfg(all(not(target_os = "trusty"), not(target_os = "wasmos")))]
 impl AsRawFd for fs::File {
     #[inline]
     fn as_raw_fd(&self) -> RawFd {
@@ -176,7 +178,7 @@ impl AsRawFd for fs::File {
     }
 }
 #[stable(feature = "from_raw_os", since = "1.1.0")]
-#[cfg(not(target_os = "trusty"))]
+#[cfg(all(not(target_os = "trusty"), not(target_os = "wasmos")))]
 impl FromRawFd for fs::File {
     #[inline]
     unsafe fn from_raw_fd(fd: RawFd) -> fs::File {
@@ -184,11 +186,38 @@ impl FromRawFd for fs::File {
     }
 }
 #[stable(feature = "into_raw_os", since = "1.4.0")]
-#[cfg(not(target_os = "trusty"))]
+#[cfg(all(not(target_os = "trusty"), not(target_os = "wasmos")))]
 impl IntoRawFd for fs::File {
     #[inline]
     fn into_raw_fd(self) -> RawFd {
         self.into_inner().into_inner().into_raw_fd()
+    }
+}
+
+#[stable(feature = "rust1", since = "1.0.0")]
+#[cfg(target_os = "wasmos")]
+impl AsRawFd for fs::File {
+    #[inline]
+    fn as_raw_fd(&self) -> RawFd {
+        self.as_inner().as_raw_fd()
+    }
+}
+
+#[stable(feature = "from_raw_os", since = "1.1.0")]
+#[cfg(target_os = "wasmos")]
+impl FromRawFd for fs::File {
+    #[inline]
+    unsafe fn from_raw_fd(fd: RawFd) -> fs::File {
+        unsafe { fs::File::from(OwnedFd::from_raw_fd(fd)) }
+    }
+}
+
+#[stable(feature = "into_raw_os", since = "1.4.0")]
+#[cfg(target_os = "wasmos")]
+impl IntoRawFd for fs::File {
+    #[inline]
+    fn into_raw_fd(self) -> RawFd {
+        self.into_inner().into_raw_fd()
     }
 }
 

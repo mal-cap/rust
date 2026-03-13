@@ -19,6 +19,9 @@ pub const O_CREAT: u32 = 0x40;
 pub const O_EXCL: u32 = 0x80;
 pub const O_TRUNC: u32 = 0x200;
 pub const O_APPEND: u32 = 0x400;
+pub const STDIN_FILENO: i32 = 0;
+pub const STDOUT_FILENO: i32 = 1;
+pub const STDERR_FILENO: i32 = 2;
 
 const SYS_OPEN: i32 = 20;
 const SYS_CLOSE: i32 = 21;

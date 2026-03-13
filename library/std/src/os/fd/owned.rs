@@ -3,6 +3,8 @@
 #![stable(feature = "io_safety", since = "1.63.0")]
 #![deny(unsafe_op_in_unsafe_fn)]
 
+#[cfg(target_os = "wasmos")]
+use crate::sys::wasmos as libc;
 #[cfg(target_os = "motor")]
 use moto_rt::libc;
 
@@ -131,7 +133,18 @@ impl BorrowedFd<'_> {
 
     /// Creates a new `OwnedFd` instance that shares the same underlying file
     /// description as the existing `BorrowedFd` instance.
-    #[cfg(any(target_arch = "wasm32", target_os = "hermit", target_os = "trusty"))]
+    #[cfg(target_os = "wasmos")]
+    #[stable(feature = "io_safety", since = "1.63.0")]
+    pub fn try_clone_to_owned(&self) -> io::Result<OwnedFd> {
+        let fd = crate::sys::wasmos::dup(self.as_raw_fd()).map_err(crate::sys::wasmos::io_error)?;
+        Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+    }
+
+    #[cfg(any(
+        all(target_arch = "wasm32", not(target_os = "wasmos")),
+        target_os = "hermit",
+        target_os = "trusty"
+    ))]
     #[stable(feature = "io_safety", since = "1.63.0")]
     pub fn try_clone_to_owned(&self) -> io::Result<OwnedFd> {
         Err(io::Error::UNSUPPORTED_PLATFORM)
@@ -314,7 +327,7 @@ impl AsFd for OwnedFd {
 }
 
 #[stable(feature = "io_safety", since = "1.63.0")]
-#[cfg(not(target_os = "trusty"))]
+#[cfg(all(not(target_os = "trusty"), not(target_os = "wasmos")))]
 impl AsFd for fs::File {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -323,7 +336,7 @@ impl AsFd for fs::File {
 }
 
 #[stable(feature = "io_safety", since = "1.63.0")]
-#[cfg(not(target_os = "trusty"))]
+#[cfg(all(not(target_os = "trusty"), not(target_os = "wasmos")))]
 impl From<fs::File> for OwnedFd {
     /// Takes ownership of a [`File`](fs::File)'s underlying file descriptor.
     #[inline]
@@ -333,10 +346,37 @@ impl From<fs::File> for OwnedFd {
 }
 
 #[stable(feature = "io_safety", since = "1.63.0")]
-#[cfg(not(target_os = "trusty"))]
+#[cfg(all(not(target_os = "trusty"), not(target_os = "wasmos")))]
 impl From<OwnedFd> for fs::File {
     /// Returns a [`File`](fs::File) that takes ownership of the given
     /// file descriptor.
+    #[inline]
+    fn from(owned_fd: OwnedFd) -> Self {
+        Self::from_inner(FromInner::from_inner(FromInner::from_inner(owned_fd)))
+    }
+}
+
+#[stable(feature = "io_safety", since = "1.63.0")]
+#[cfg(target_os = "wasmos")]
+impl AsFd for fs::File {
+    #[inline]
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(self.as_raw_fd()) }
+    }
+}
+
+#[stable(feature = "io_safety", since = "1.63.0")]
+#[cfg(target_os = "wasmos")]
+impl From<fs::File> for OwnedFd {
+    #[inline]
+    fn from(file: fs::File) -> OwnedFd {
+        unsafe { OwnedFd::from_raw_fd(file.into_inner().into_raw_fd()) }
+    }
+}
+
+#[stable(feature = "io_safety", since = "1.63.0")]
+#[cfg(target_os = "wasmos")]
+impl From<OwnedFd> for fs::File {
     #[inline]
     fn from(owned_fd: OwnedFd) -> Self {
         Self::from_inner(FromInner::from_inner(FromInner::from_inner(owned_fd)))

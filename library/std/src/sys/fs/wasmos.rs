@@ -3,11 +3,14 @@ use crate::fmt;
 use crate::fs::TryLockError;
 use crate::hash::{Hash, Hasher};
 use crate::io::{self, BorrowedCursor, IoSlice, IoSliceMut, SeekFrom};
+use crate::mem::ManuallyDrop;
+use crate::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, RawFd};
 use crate::path::{Path, PathBuf};
 pub use crate::sys::fs::common::{Dir, copy, exists, remove_dir_all};
+use crate::sys::fd::FileDesc;
 use crate::sys::path;
 use crate::sys::time::{SystemTime, UNIX_EPOCH};
-use crate::sys::{unsupported, unsupported_err, wasmos};
+use crate::sys::{FromInner, IntoInner, unsupported, unsupported_err, wasmos};
 use crate::time::Duration;
 use crate::vec;
 use crate::vec::Vec;
@@ -426,6 +429,37 @@ impl File {
 impl Drop for File {
     fn drop(&mut self) {
         let _ = wasmos::close(self.fd);
+    }
+}
+
+impl IntoInner<FileDesc> for File {
+    fn into_inner(self) -> FileDesc {
+        let fd = ManuallyDrop::new(self).fd;
+        unsafe { FileDesc::from_raw_fd(fd) }
+    }
+}
+
+impl FromInner<FileDesc> for File {
+    fn from_inner(file_desc: FileDesc) -> Self {
+        Self { fd: file_desc.into_raw_fd() }
+    }
+}
+
+impl AsRawFd for File {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd
+    }
+}
+
+impl IntoRawFd for File {
+    fn into_raw_fd(self) -> RawFd {
+        ManuallyDrop::new(self).fd
+    }
+}
+
+impl FromRawFd for File {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self { fd }
     }
 }
 
