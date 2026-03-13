@@ -68,7 +68,7 @@ mod platform {
     #[cfg(target_os = "linux")]
     pub use crate::os::linux::*;
     #[cfg(target_os = "wasmos")]
-    pub use crate::os::linux::*;
+    pub use crate::os::wasmos::*;
     #[cfg(target_os = "netbsd")]
     pub use crate::os::netbsd::*;
     #[cfg(target_os = "nto")]
@@ -92,6 +92,7 @@ mod platform {
 pub mod ffi;
 pub mod fs;
 pub mod io;
+#[cfg(not(target_os = "wasmos"))]
 pub mod net;
 pub mod process;
 pub mod raw;

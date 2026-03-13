@@ -10,7 +10,7 @@ pub use crate::sys::fs::common::{Dir, copy, exists, remove_dir_all};
 use crate::sys::fd::FileDesc;
 use crate::sys::path;
 use crate::sys::time::{SystemTime, UNIX_EPOCH};
-use crate::sys::{FromInner, IntoInner, unsupported, unsupported_err, wasmos};
+use crate::sys::{AsInner, FromInner, IntoInner, unsupported, unsupported_err, wasmos};
 use crate::time::Duration;
 use crate::vec;
 use crate::vec::Vec;
@@ -20,6 +20,8 @@ const FT_REG: u8 = 0;
 const FT_DIR: u8 = 1;
 const FT_CHR: u8 = 2;
 const FT_LNK: u8 = 4;
+const FT_FIFO: u8 = 5;
+const FT_SOCK: u8 = 6;
 
 const DT_DIR: u8 = 4;
 const DT_LNK: u8 = 10;
@@ -34,6 +36,7 @@ pub struct FilePermissions {
     mode: u32,
 }
 
+#[repr(transparent)]
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct FileAttr {
     raw: [u8; STAT_BUF_LEN],
@@ -57,6 +60,8 @@ pub struct OpenOptions {
     truncate: bool,
     create: bool,
     create_new: bool,
+    mode: u32,
+    custom_flags: i32,
 }
 
 #[derive(Copy, Clone, Default, Debug)]
@@ -71,7 +76,9 @@ pub struct File {
 }
 
 #[derive(Debug)]
-pub struct DirBuilder;
+pub struct DirBuilder {
+    mode: u32,
+}
 
 fn read_u32(buf: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap())
@@ -105,6 +112,16 @@ fn fstat_inner(fd: i32) -> io::Result<FileAttr> {
 }
 
 impl FileType {
+    pub fn is(&self, mode: u32) -> bool {
+        match mode {
+            0o060000 => false,
+            0o020000 => self.raw == FT_CHR,
+            0o010000 => self.raw == FT_FIFO,
+            0o140000 => self.raw == FT_SOCK,
+            _ => false,
+        }
+    }
+
     pub fn is_dir(&self) -> bool {
         self.raw == FT_DIR
     }
@@ -119,6 +136,18 @@ impl FileType {
 }
 
 impl FilePermissions {
+    pub fn mode(&self) -> u32 {
+        self.mode
+    }
+
+    pub fn set_mode(&mut self, mode: u32) {
+        self.mode = mode;
+    }
+
+    pub fn from_mode(mode: u32) -> FilePermissions {
+        FilePermissions { mode }
+    }
+
     pub fn readonly(&self) -> bool {
         self.mode & 0o222 == 0
     }
@@ -207,6 +236,10 @@ impl DirEntry {
         self.name.clone()
     }
 
+    pub fn file_name_os_str(&self) -> &OsStr {
+        self.name.as_os_str()
+    }
+
     pub fn metadata(&self) -> io::Result<FileAttr> {
         stat(&self.path())
     }
@@ -214,11 +247,15 @@ impl DirEntry {
     pub fn file_type(&self) -> io::Result<FileType> {
         Ok(self.file_type)
     }
+
+    pub fn ino(&self) -> u64 {
+        self.metadata().map(|meta| read_u64(&meta.raw, 24)).unwrap_or(0)
+    }
 }
 
 impl OpenOptions {
     pub fn new() -> OpenOptions {
-        OpenOptions::default()
+        OpenOptions { mode: 0o666, ..OpenOptions::default() }
     }
 
     pub fn read(&mut self, read: bool) {
@@ -246,6 +283,14 @@ impl OpenOptions {
 
     pub fn create_new(&mut self, create_new: bool) {
         self.create_new = create_new;
+    }
+
+    pub fn mode(&mut self, mode: u32) {
+        self.mode = mode;
+    }
+
+    pub fn custom_flags(&mut self, flags: i32) {
+        self.custom_flags = flags;
     }
 
     fn access_flags(&self) -> io::Result<u32> {
@@ -308,13 +353,46 @@ impl File {
     }
 
     pub fn open(path: &Path, opts: &OpenOptions) -> io::Result<File> {
-        let flags = opts.access_flags()? | opts.creation_flags()?;
+        let flags = opts.access_flags()? | opts.creation_flags()? | (opts.custom_flags as u32);
         let fd = wasmos::open(path.as_os_str(), flags).map_err(wasmos::io_error)?;
+        if flags & wasmos::O_CREAT != 0 {
+            let _ = wasmos::chmod(path.as_os_str(), opts.mode);
+        }
         Ok(File { fd })
     }
 
     pub fn file_attr(&self) -> io::Result<FileAttr> {
         fstat_inner(self.fd)
+    }
+
+    pub fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
+        let dup = self.duplicate()?;
+        dup.seek(SeekFrom::Start(offset))?;
+        dup.read(buf)
+    }
+
+    pub fn read_buf_at(&self, cursor: BorrowedCursor<'_>, offset: u64) -> io::Result<()> {
+        let dup = self.duplicate()?;
+        dup.seek(SeekFrom::Start(offset))?;
+        dup.read_buf(cursor)
+    }
+
+    pub fn read_vectored_at(&self, bufs: &mut [IoSliceMut<'_>], offset: u64) -> io::Result<usize> {
+        let dup = self.duplicate()?;
+        dup.seek(SeekFrom::Start(offset))?;
+        dup.read_vectored(bufs)
+    }
+
+    pub fn write_at(&self, buf: &[u8], offset: u64) -> io::Result<usize> {
+        let dup = self.duplicate()?;
+        dup.seek(SeekFrom::Start(offset))?;
+        dup.write(buf)
+    }
+
+    pub fn write_vectored_at(&self, bufs: &[IoSlice<'_>], offset: u64) -> io::Result<usize> {
+        let dup = self.duplicate()?;
+        dup.seek(SeekFrom::Start(offset))?;
+        dup.write_vectored(bufs)
     }
 
     pub fn fsync(&self) -> io::Result<()> {
@@ -445,6 +523,12 @@ impl FromInner<FileDesc> for File {
     }
 }
 
+impl FromInner<u32> for FilePermissions {
+    fn from_inner(mode: u32) -> Self {
+        FilePermissions { mode }
+    }
+}
+
 impl AsRawFd for File {
     fn as_raw_fd(&self) -> RawFd {
         self.fd
@@ -465,11 +549,17 @@ impl FromRawFd for File {
 
 impl DirBuilder {
     pub fn new() -> DirBuilder {
-        DirBuilder
+        DirBuilder { mode: 0o777 }
+    }
+
+    pub fn set_mode(&mut self, mode: u32) {
+        self.mode = mode;
     }
 
     pub fn mkdir(&self, path: &Path) -> io::Result<()> {
-        wasmos::mkdir(path.as_os_str()).map_err(wasmos::io_error)
+        wasmos::mkdir(path.as_os_str()).map_err(wasmos::io_error)?;
+        let _ = wasmos::chmod(path.as_os_str(), self.mode);
+        Ok(())
     }
 }
 
@@ -518,6 +608,26 @@ pub fn readdir(path: &Path) -> io::Result<ReadDir> {
 
 pub fn unlink(path: &Path) -> io::Result<()> {
     wasmos::unlink(path.as_os_str()).map_err(wasmos::io_error)
+}
+
+pub fn chown(_path: &Path, _uid: u32, _gid: u32) -> io::Result<()> {
+    unsupported()
+}
+
+pub fn fchown(_fd: RawFd, _uid: u32, _gid: u32) -> io::Result<()> {
+    unsupported()
+}
+
+pub fn lchown(_path: &Path, _uid: u32, _gid: u32) -> io::Result<()> {
+    unsupported()
+}
+
+pub fn chroot(_path: &Path) -> io::Result<()> {
+    unsupported()
+}
+
+pub fn mkfifo(_path: &Path, _mode: u32) -> io::Result<()> {
+    unsupported()
 }
 
 pub fn rename(old: &Path, new: &Path) -> io::Result<()> {

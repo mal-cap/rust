@@ -93,6 +93,14 @@ impl Thread {
             }
         }
     }
+
+    pub fn id(&self) -> u64 {
+        self.state.tid.load(Ordering::Acquire).max(1) as u64
+    }
+
+    pub fn into_id(self) -> u64 {
+        self.id()
+    }
 }
 
 pub fn yield_now() {

@@ -29,6 +29,10 @@ mod is_terminal {
             mod isatty;
             pub use isatty::*;
         }
+        target_os = "wasmos" => {
+            mod wasmos;
+            pub use wasmos::*;
+        }
         target_os = "windows" => {
             mod windows;
             pub use windows::*;

@@ -31,7 +31,7 @@ cfg_select! {
 mod env;
 
 pub use env::CommandEnvs;
-#[cfg(target_family = "unix")]
+#[cfg(any(target_family = "unix", target_os = "wasmos"))]
 pub use imp::getppid;
 pub use imp::{
     ChildPipe, Command, CommandArgs, EnvKey, ExitCode, ExitStatus, ExitStatusError, Process, Stdio,

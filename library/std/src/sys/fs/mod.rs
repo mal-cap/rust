@@ -9,6 +9,7 @@ cfg_select! {
     target_os = "wasmos" => {
         mod wasmos;
         use wasmos as imp;
+        pub use wasmos::{chown, chroot, fchown, lchown, mkfifo};
     }
     any(target_family = "unix", target_os = "wasi") => {
         mod unix;

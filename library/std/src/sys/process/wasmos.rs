@@ -2,11 +2,14 @@
 
 use super::CommandEnvs;
 use super::env::CommandEnv;
+use crate::boxed::Box;
 pub use crate::ffi::OsString as EnvKey;
 use crate::ffi::{OsStr, OsString};
 use crate::num::NonZero;
+use crate::os::fd::AsRawFd;
 use crate::path::{Path, PathBuf};
 use crate::process::StdioPipes;
+use crate::sys::fd::FileDesc;
 use crate::sys::fs::File;
 use crate::sys::pipe::{Pipe, pipe};
 use crate::sys::{wasmos, os};
@@ -51,6 +54,13 @@ pub struct Command {
     stdin: Option<Stdio>,
     stdout: Option<Stdio>,
     stderr: Option<Stdio>,
+    uid: Option<u32>,
+    gid: Option<u32>,
+    groups: Option<Box<[u32]>>,
+    pgroup: Option<i32>,
+    chroot: Option<OsString>,
+    setsid: bool,
+    pre_exec: Vec<Box<dyn FnMut() -> io::Result<()> + Send + Sync>>,
 }
 
 #[derive(Debug)]
@@ -60,6 +70,7 @@ pub enum Stdio {
     MakePipe,
     ParentStdout,
     ParentStderr,
+    Fd(FileDesc),
     InheritFile(File),
     Pipe(Pipe),
 }
@@ -74,7 +85,18 @@ impl Command {
             stdin: None,
             stdout: None,
             stderr: None,
+            uid: None,
+            gid: None,
+            groups: None,
+            pgroup: None,
+            chroot: None,
+            setsid: false,
+            pre_exec: Vec::new(),
         }
+    }
+
+    pub fn set_arg_0(&mut self, arg: &OsStr) {
+        self.args[0] = arg.to_owned();
     }
 
     pub fn arg(&mut self, arg: &OsStr) {
@@ -87,6 +109,37 @@ impl Command {
 
     pub fn cwd(&mut self, dir: &OsStr) {
         self.cwd = Some(dir.to_owned());
+    }
+
+    pub fn uid(&mut self, id: u32) {
+        self.uid = Some(id);
+    }
+
+    pub fn gid(&mut self, id: u32) {
+        self.gid = Some(id);
+    }
+
+    pub fn groups(&mut self, groups: &[u32]) {
+        self.groups = Some(Box::from(groups));
+    }
+
+    pub fn pgroup(&mut self, pgroup: i32) {
+        self.pgroup = Some(pgroup);
+    }
+
+    pub fn chroot(&mut self, dir: &Path) {
+        self.chroot = Some(dir.as_os_str().to_owned());
+        if self.cwd.is_none() {
+            self.cwd = Some(OsString::from("/"));
+        }
+    }
+
+    pub fn setsid(&mut self, setsid: bool) {
+        self.setsid = setsid;
+    }
+
+    pub unsafe fn pre_exec(&mut self, f: Box<dyn FnMut() -> io::Result<()> + Send + Sync>) {
+        self.pre_exec.push(f);
     }
 
     pub fn stdin(&mut self, stdin: Stdio) {
@@ -128,6 +181,7 @@ impl Command {
         default: Stdio,
         needs_stdin: bool,
     ) -> io::Result<(Process, StdioPipes)> {
+        self.ensure_supported_extensions()?;
         let program = self.resolve_program()?;
         self.validate_cwd()?;
 
@@ -275,6 +329,23 @@ impl Command {
         }
     }
 
+    fn ensure_supported_extensions(&self) -> io::Result<()> {
+        if self.uid.is_some()
+            || self.gid.is_some()
+            || self.groups.is_some()
+            || self.pgroup.is_some()
+            || self.chroot.is_some()
+            || self.setsid
+            || !self.pre_exec.is_empty()
+        {
+            return Err(io::const_error!(
+                io::ErrorKind::Unsupported,
+                "unix process extensions are not supported on WasmOS yet"
+            ));
+        }
+        Ok(())
+    }
+
     fn cwd_action(&self) -> Option<SpawnAction> {
         self.cwd
             .as_ref()
@@ -283,6 +354,7 @@ impl Command {
 }
 
 pub fn output(cmd: &mut Command) -> io::Result<(ExitStatus, Vec<u8>, Vec<u8>)> {
+    cmd.ensure_supported_extensions()?;
     let program = cmd.resolve_program()?;
     cmd.validate_cwd()?;
 
@@ -382,6 +454,10 @@ fn stdin_action(stdio: &Stdio, pipe: Option<&(Pipe, Pipe)>) -> Option<SpawnActio
                 parent_fd: parent_end.raw_fd(),
             })
         }
+        Stdio::Fd(fd) => Some(SpawnAction::Dup {
+            src_fd: fd.as_raw_fd(),
+            target_fd: STDIN_FD,
+        }),
         Stdio::InheritFile(file) => Some(SpawnAction::Dup {
             src_fd: file.raw_fd(),
             target_fd: STDIN_FD,
@@ -418,6 +494,10 @@ fn stdout_action(stdio: &Stdio, pipe: Option<&(Pipe, Pipe)>) -> Option<SpawnActi
             src_fd: STDERR_FD,
             target_fd: STDOUT_FD,
         }),
+        Stdio::Fd(fd) => Some(SpawnAction::Dup {
+            src_fd: fd.as_raw_fd(),
+            target_fd: STDOUT_FD,
+        }),
         Stdio::InheritFile(file) => Some(SpawnAction::Dup {
             src_fd: file.raw_fd(),
             target_fd: STDOUT_FD,
@@ -451,6 +531,10 @@ fn stderr_action(stdio: &Stdio, pipe: Option<&(Pipe, Pipe)>) -> Option<SpawnActi
         }),
         Stdio::ParentStderr => Some(SpawnAction::Dup {
             src_fd: STDERR_FD,
+            target_fd: STDERR_FD,
+        }),
+        Stdio::Fd(fd) => Some(SpawnAction::Dup {
+            src_fd: fd.as_raw_fd(),
             target_fd: STDERR_FD,
         }),
         Stdio::InheritFile(file) => Some(SpawnAction::Dup {
@@ -498,6 +582,32 @@ impl ExitStatus {
 
     pub fn code(&self) -> Option<i32> {
         Some(self.0)
+    }
+
+    pub fn signal(&self) -> Option<i32> {
+        None
+    }
+
+    pub fn core_dumped(&self) -> bool {
+        false
+    }
+
+    pub fn stopped_signal(&self) -> Option<i32> {
+        None
+    }
+
+    pub fn continued(&self) -> bool {
+        false
+    }
+
+    pub fn into_raw(self) -> i32 {
+        self.0 << 8
+    }
+}
+
+impl From<i32> for ExitStatus {
+    fn from(raw: i32) -> Self {
+        ExitStatus::new(raw)
     }
 }
 
@@ -549,6 +659,10 @@ impl Process {
         self.pid
     }
 
+    pub fn send_signal(&self, signal: i32) -> io::Result<()> {
+        wasmos::kill(self.pid, signal).map_err(wasmos::io_error)
+    }
+
     pub fn kill(&mut self) -> io::Result<()> {
         wasmos::kill(self.pid, SIGKILL).map_err(wasmos::io_error)
     }
@@ -566,6 +680,12 @@ impl Process {
             Ok(_) => Ok(Some(ExitStatus::new(raw_status))),
             Err(errno) => Err(wasmos::io_error(errno)),
         }
+    }
+}
+
+impl Command {
+    pub fn exec(&mut self, _default: Stdio) -> io::Error {
+        io::const_error!(io::ErrorKind::Unsupported, "exec is not supported on WasmOS")
     }
 }
 
@@ -663,6 +783,10 @@ pub fn read_output(
 
 pub fn getpid() -> u32 {
     wasmos::getpid()
+}
+
+pub fn getppid() -> u32 {
+    1
 }
 
 impl From<ChildPipe> for Stdio {

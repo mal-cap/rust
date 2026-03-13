@@ -96,6 +96,7 @@ use crate::io::{self, Stderr, StderrLock, Stdin, StdinLock, Stdout, StdoutLock, 
 #[stable(feature = "rust1", since = "1.0.0")]
 pub use crate::os::fd::*;
 #[allow(unused_imports)] // not used on all targets
+#[cfg(not(target_os = "wasmos"))]
 use crate::sys::cvt;
 
 // Tests for this module
