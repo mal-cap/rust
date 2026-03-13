@@ -286,6 +286,8 @@ pub fn output(cmd: &mut Command) -> io::Result<(ExitStatus, Vec<u8>, Vec<u8>)> {
     let program = cmd.resolve_program()?;
     cmd.validate_cwd()?;
 
+    let stdin = cmd.stdin.take().unwrap_or(Stdio::Null);
+
     let capture_id = next_output_capture_id();
     let stdout_path = capture_path("stdout", capture_id);
     let stderr_path = capture_path("stderr", capture_id);
@@ -321,11 +323,7 @@ pub fn output(cmd: &mut Command) -> io::Result<(ExitStatus, Vec<u8>, Vec<u8>)> {
     let mut action_nodes = Vec::<Box<[u8]>>::new();
     for action in [
         cmd.cwd_action(),
-        Some(SpawnAction::Open {
-            target_fd: STDIN_FD,
-            flags: wasmos::O_RDONLY,
-            path: nul_terminated(OsStr::new("/dev/null")),
-        }),
+        stdin_action(&stdin, None),
         Some(SpawnAction::Open {
             target_fd: STDOUT_FD,
             flags: wasmos::O_WRONLY | wasmos::O_CREAT | wasmos::O_TRUNC,
