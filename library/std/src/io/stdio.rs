@@ -736,7 +736,9 @@ pub fn cleanup() {
         // might have leaked a StdoutLock, which would
         // otherwise cause a deadlock here.
         if let Some(lock) = stdout.try_lock() {
-            *lock.borrow_mut() = LineWriter::with_capacity(0, stdout_raw());
+            let mut writer = lock.borrow_mut();
+            let _ = writer.flush();
+            *writer = LineWriter::with_capacity(0, stdout_raw());
         }
     }
 }
