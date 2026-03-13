@@ -4,6 +4,10 @@ mod error;
 
 mod io_slice {
     cfg_select! {
+        target_os = "wasmos" => {
+            mod iovec;
+            pub use iovec::*;
+        }
         any(target_family = "unix", target_os = "hermit", target_os = "solid_asp3", target_os = "trusty", target_os = "wasi") => {
             mod iovec;
             pub use iovec::*;
@@ -25,13 +29,13 @@ mod io_slice {
 
 mod is_terminal {
     cfg_select! {
-        any(target_family = "unix", target_os = "wasi") => {
-            mod isatty;
-            pub use isatty::*;
-        }
         target_os = "wasmos" => {
             mod wasmos;
             pub use wasmos::*;
+        }
+        any(target_family = "unix", target_os = "wasi") => {
+            mod isatty;
+            pub use isatty::*;
         }
         target_os = "windows" => {
             mod windows;
@@ -62,6 +66,7 @@ mod kernel_copy;
 pub use error::errno_location;
 #[cfg_attr(not(target_os = "linux"), allow(unused_imports))]
 #[cfg(any(
+    target_os = "wasmos",
     all(target_family = "unix", not(any(target_os = "vxworks", target_os = "rtems"))),
     target_os = "wasi",
 ))]

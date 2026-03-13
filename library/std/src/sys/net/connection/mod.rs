@@ -1,6 +1,10 @@
 cfg_select! {
+    target_os = "wasmos" => {
+        mod wasmos;
+        pub use wasmos::*;
+    }
     any(
-        all(target_family = "unix", not(target_os = "l4re")),
+        all(target_family = "unix", not(any(target_os = "l4re", target_os = "wasmos"))),
         target_os = "windows",
         target_os = "hermit",
         all(target_os = "wasi", any(target_env = "p2", target_env = "p3")),
@@ -16,10 +20,6 @@ cfg_select! {
     all(target_os = "wasi", target_env = "p1") => {
         mod wasip1;
         pub use wasip1::*;
-    }
-    target_os = "wasmos" => {
-        mod wasmos;
-        pub use wasmos::*;
     }
     target_os = "motor" => {
         mod motor;

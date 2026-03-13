@@ -3,13 +3,13 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 cfg_select! {
-    any(target_family = "unix", target_os = "wasi") => {
-        mod unix;
-        pub use unix::*;
-    }
     target_os = "wasmos" => {
         mod wasmos;
         pub use wasmos::*;
+    }
+    any(target_family = "unix", target_os = "wasi") => {
+        mod unix;
+        pub use unix::*;
     }
     target_os = "hermit" => {
         mod hermit;

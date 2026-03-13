@@ -10,6 +10,7 @@ cfg_select! {
         mod wasmos;
         use wasmos as imp;
         pub use wasmos::{chown, chroot, fchown, lchown, mkfifo};
+        pub(crate) use wasmos::debug_assert_fd_is_open;
     }
     any(target_family = "unix", target_os = "wasi") => {
         mod unix;
@@ -57,7 +58,10 @@ cfg_select! {
 }
 
 // FIXME: Replace this with platform-specific path conversion functions.
-#[cfg(not(any(target_family = "unix", target_os = "windows", target_os = "wasi")))]
+#[cfg(any(
+    target_os = "wasmos",
+    not(any(target_family = "unix", target_os = "windows", target_os = "wasi"))
+))]
 #[inline]
 pub fn with_native_path<T>(path: &Path, f: &dyn Fn(&Path) -> io::Result<T>) -> io::Result<T> {
     f(path)

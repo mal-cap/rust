@@ -676,3 +676,5 @@ pub fn lstat(path: &Path) -> io::Result<FileAttr> {
 pub fn canonicalize(path: &Path) -> io::Result<PathBuf> {
     path::absolute(path)
 }
+
+pub(crate) fn debug_assert_fd_is_open(_fd: i32) {}

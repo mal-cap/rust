@@ -20,7 +20,7 @@ use crate::os::hermit::io::OwnedFd;
 use crate::os::raw;
 #[cfg(all(doc, not(target_arch = "wasm32")))]
 use crate::os::unix::io::AsFd;
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "wasmos")))]
 use crate::os::unix::io::OwnedFd;
 #[cfg(target_os = "wasi")]
 use crate::os::wasi::io::OwnedFd;

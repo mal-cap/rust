@@ -41,6 +41,7 @@ pub use imp::{
 #[cfg(any(
     all(
         target_family = "unix",
+        not(target_os = "wasmos"),
         not(any(
             target_os = "espidf",
             target_os = "horizon",
@@ -79,6 +80,7 @@ pub fn output(cmd: &mut Command) -> crate::io::Result<(ExitStatus, Vec<u8>, Vec<
 #[cfg(not(any(
     all(
         target_family = "unix",
+        not(target_os = "wasmos"),
         not(any(
             target_os = "espidf",
             target_os = "horizon",

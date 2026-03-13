@@ -1,8 +1,20 @@
 use crate::io;
 use crate::sys::wasmos;
 
+pub fn errno_location() -> crate::ptr::NonNull<i32> {
+    unsafe { crate::ptr::NonNull::new_unchecked(&raw mut ERRNO) }
+}
+
+static mut ERRNO: i32 = 0;
+
 pub fn errno() -> i32 {
-    0
+    unsafe { ERRNO }
+}
+
+pub fn set_errno(errno: i32) {
+    unsafe {
+        ERRNO = errno;
+    }
 }
 
 pub fn is_interrupted(errno: i32) -> bool {
