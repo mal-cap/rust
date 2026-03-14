@@ -112,6 +112,14 @@ pub fn exit(code: i32) -> ! {
             }
             crate::intrinsics::abort()
         }
+        target_os = "wasmos" => {
+            // Direct syscall - SYS_EXIT = 0. Cannot use libc::exit on WasmOS.
+            unsafe extern "C" {
+                fn __wasmos_syscall(nr: i32, a0: i32, a1: i32, a2: i32, a3: i32, a4: i32, a5: i32) -> i64;
+            }
+            unsafe { __wasmos_syscall(0, code, 0, 0, 0, 0, 0) };
+            loop {}
+        }
         any(
             target_family = "unix",
             target_os = "wasi",

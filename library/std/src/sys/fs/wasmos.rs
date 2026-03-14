@@ -495,8 +495,7 @@ impl File {
     }
 
     pub fn set_permissions(&self, perm: FilePermissions) -> io::Result<()> {
-        let _ = perm;
-        unsupported()
+        wasmos::fchmod(self.fd, perm.mode).map_err(wasmos::io_error)
     }
 
     pub fn set_times(&self, _times: FileTimes) -> io::Result<()> {
@@ -638,12 +637,45 @@ pub fn set_perm(path: &Path, perm: FilePermissions) -> io::Result<()> {
     wasmos::chmod(path.as_os_str(), perm.mode).map_err(wasmos::io_error)
 }
 
-pub fn set_times(_path: &Path, _times: FileTimes) -> io::Result<()> {
-    unsupported()
+pub fn set_times(path: &Path, times: FileTimes) -> io::Result<()> {
+    set_times_impl(path, times, 0)
 }
 
-pub fn set_times_nofollow(_path: &Path, _times: FileTimes) -> io::Result<()> {
-    unsupported()
+pub fn set_times_nofollow(path: &Path, times: FileTimes) -> io::Result<()> {
+    const AT_SYMLINK_NOFOLLOW: i32 = 0x100;
+    set_times_impl(path, times, AT_SYMLINK_NOFOLLOW)
+}
+
+fn set_times_impl(path: &Path, times: FileTimes, flags: i32) -> io::Result<()> {
+    const AT_FDCWD: i32 = -100;
+    const UTIME_OMIT: i32 = 0x3ffffffe;
+
+    let encode_timespec = |opt: Option<SystemTime>| -> [u8; 16] {
+        let mut buf = [0u8; 16];
+        match opt {
+            None => {
+                buf[8..12].copy_from_slice(&UTIME_OMIT.to_le_bytes());
+            }
+            Some(t) => {
+                let ns = t
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos() as u64;
+                let sec = (ns / 1_000_000_000) as i64;
+                let nsec = (ns % 1_000_000_000) as i32;
+                buf[0..8].copy_from_slice(&sec.to_le_bytes());
+                buf[8..12].copy_from_slice(&nsec.to_le_bytes());
+                // buf[12..16] is _pad, already zero
+            }
+        }
+        buf
+    };
+
+    let mut times_buf = [0u8; 32];
+    times_buf[0..16].copy_from_slice(&encode_timespec(times.accessed));
+    times_buf[16..32].copy_from_slice(&encode_timespec(times.modified));
+
+    wasmos::utimensat(AT_FDCWD, path.as_os_str(), &times_buf, flags).map_err(wasmos::io_error)
 }
 
 pub fn rmdir(path: &Path) -> io::Result<()> {

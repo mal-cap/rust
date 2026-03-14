@@ -69,10 +69,20 @@ const SYS_YIELD: i32 = 7;
 const SYS_GETENV: i32 = 8;
 const SYS_SETENV: i32 = 9;
 const SYS_POLL: i32 = 90;
+const SYS_IOCTL: i32 = 35;
 const SYS_CLONE: i32 = 123;
 const SYS_GETTID: i32 = 124;
+const SYS_SETPGID: i32 = 126;
+const SYS_GETPGID: i32 = 127;
+const SYS_SETSID: i32 = 129;
 const SYS_POSIX_SPAWN: i32 = 134;
 const SYS_UNSETENV: i32 = 135;
+const SYS_GETPPID: i32 = 5;
+const SYS_FCHMOD: i32 = 103;
+const SYS_UTIMENSAT: i32 = 110;
+const SYS_EXECVE: i32 = 70;
+const SYS_SIGACTION: i32 = 91;
+const SYS_SIGPROCMASK: i32 = 92;
 
 pub const WAIT_WNOHANG: i32 = 0x1;
 pub const CLOCK_MONOTONIC: u32 = 0;
@@ -240,6 +250,28 @@ pub fn symlink(target: &OsStr, link_path: &OsStr) -> Result<(), Errno> {
 
 pub fn chmod(path: &OsStr, mode: u32) -> Result<(), Errno> {
     call_path(path, |ptr, len| call(SYS_CHMOD, ptr as i32, len as i32, mode as i32, 0, 0, 0).map(|_| ()))
+}
+
+pub fn fchmod(fd: i32, mode: u32) -> Result<(), Errno> {
+    call(SYS_FCHMOD, fd, mode as i32, 0, 0, 0, 0).map(|_| ())
+}
+
+/// utimensat(dirfd, path, times_buf_ptr, flags)
+/// times_buf is 32 bytes: two TimespecWire structs, each { tv_sec: i64 LE, tv_nsec: i32 LE, _pad: i32 }.
+/// UTIME_OMIT (0x3ffffffe) in tv_nsec means do not change that timestamp.
+pub fn utimensat(dirfd: i32, path: &OsStr, times_buf: &[u8; 32], flags: i32) -> Result<(), Errno> {
+    call_path(path, |ptr, len| {
+        call(
+            SYS_UTIMENSAT,
+            dirfd,
+            ptr as i32,
+            len as i32,
+            times_buf.as_ptr() as i32,
+            flags,
+            0,
+        )
+        .map(|_| ())
+    })
 }
 
 pub fn ftruncate(fd: i32, len: u64) -> Result<(), Errno> {
@@ -480,4 +512,51 @@ pub fn posix_spawn(
         0,
     )
     .map(|v| v as u32)
+}
+
+// execve uses musl-style ABI: a0=path_ptr (null-terminated), a1=argv_ptr
+// (null-terminated array of pointers to null-terminated strings), a2=envp_ptr
+// (ignored by kernel — env is inherited), a3=0 (argv_count=0 triggers musl path).
+pub fn execve(path: &OsStr, argv_ptr: *const u32, envp_ptr: *const u32) -> Result<(), Errno> {
+    let mut path_buf = Vec::with_capacity(path.as_encoded_bytes().len() + 1);
+    path_buf.extend_from_slice(path.as_encoded_bytes());
+    path_buf.push(0);
+    call(
+        SYS_EXECVE,
+        path_buf.as_ptr() as i32,
+        argv_ptr as i32,
+        envp_ptr as i32,
+        0,
+        0,
+        0,
+    )
+    .map(|_| ())
+}
+
+pub fn getppid() -> u32 {
+    call(SYS_GETPPID, 0, 0, 0, 0, 0, 0).unwrap_or(1) as u32
+}
+
+pub fn setpgid(pid: u32, pgid: u32) -> Result<(), Errno> {
+    call(SYS_SETPGID, pid as i32, pgid as i32, 0, 0, 0, 0).map(|_| ())
+}
+
+pub fn getpgid(pid: u32) -> Result<u32, Errno> {
+    call(SYS_GETPGID, pid as i32, 0, 0, 0, 0, 0).map(|v| v as u32)
+}
+
+pub fn setsid() -> Result<u32, Errno> {
+    call(SYS_SETSID, 0, 0, 0, 0, 0, 0).map(|v| v as u32)
+}
+
+pub fn ioctl(fd: i32, request: u32, arg_ptr: u32) -> Result<i32, Errno> {
+    call(SYS_IOCTL, fd, request as i32, arg_ptr as i32, 0, 0, 0)
+}
+
+pub fn sigaction(signum: i32, act_ptr: u32, oldact_ptr: u32) -> Result<(), Errno> {
+    call(SYS_SIGACTION, signum, act_ptr as i32, oldact_ptr as i32, 0, 0, 0).map(|_| ())
+}
+
+pub fn sigprocmask(how: i32, set_ptr: u32, oldset_ptr: u32) -> Result<(), Errno> {
+    call(SYS_SIGPROCMASK, how, set_ptr as i32, oldset_ptr as i32, 0, 0, 0).map(|_| ())
 }

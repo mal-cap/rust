@@ -267,6 +267,16 @@ impl Command {
             }
         };
 
+        // Apply process group if requested
+        if let Some(pgid) = self.pgroup {
+            let _ = wasmos::setpgid(child_pid, pgid as u32);
+        }
+        if self.setsid {
+            // posix_spawn model: parent sets a new process group equal to child's pid
+            // as a best-effort approximation of setsid semantics.
+            let _ = wasmos::setpgid(child_pid, child_pid);
+        }
+
         let stdin_parent = stdin_pipe.map(|(child_end, parent_end)| {
             drop(child_end);
             parent_end
@@ -333,9 +343,7 @@ impl Command {
         if self.uid.is_some()
             || self.gid.is_some()
             || self.groups.is_some()
-            || self.pgroup.is_some()
             || self.chroot.is_some()
-            || self.setsid
             || !self.pre_exec.is_empty()
         {
             return Err(io::const_error!(
@@ -685,7 +693,40 @@ impl Process {
 
 impl Command {
     pub fn exec(&mut self, _default: Stdio) -> io::Error {
-        io::const_error!(io::ErrorKind::Unsupported, "exec is not supported on WasmOS")
+        let program = match self.resolve_program() {
+            Ok(p) => p,
+            Err(e) => return e,
+        };
+
+        let argv_bufs = self
+            .args
+            .iter()
+            .map(|arg| nul_terminated(arg.as_os_str()))
+            .collect::<Vec<_>>();
+        let mut argv_ptrs = argv_bufs.iter().map(|arg| arg.as_ptr() as u32).collect::<Vec<_>>();
+        argv_ptrs.push(0);
+
+        let env_pairs = self.env.capture();
+        let env_bufs = env_pairs
+            .iter()
+            .map(|(key, value)| {
+                let mut entry = Vec::with_capacity(
+                    key.as_encoded_bytes().len() + value.as_encoded_bytes().len() + 2,
+                );
+                entry.extend_from_slice(key.as_encoded_bytes());
+                entry.push(b'=');
+                entry.extend_from_slice(value.as_encoded_bytes());
+                entry.push(0);
+                entry
+            })
+            .collect::<Vec<_>>();
+        let mut env_ptrs = env_bufs.iter().map(|entry| entry.as_ptr() as u32).collect::<Vec<_>>();
+        env_ptrs.push(0);
+
+        match wasmos::execve(program.as_os_str(), argv_ptrs.as_ptr(), env_ptrs.as_ptr()) {
+            Ok(()) => unreachable!("execve returned Ok"),
+            Err(errno) => wasmos::io_error(errno),
+        }
     }
 }
 
@@ -786,7 +827,7 @@ pub fn getpid() -> u32 {
 }
 
 pub fn getppid() -> u32 {
-    1
+    wasmos::getppid()
 }
 
 impl From<ChildPipe> for Stdio {
