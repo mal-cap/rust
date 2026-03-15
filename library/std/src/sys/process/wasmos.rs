@@ -438,7 +438,7 @@ pub fn output(cmd: &mut Command) -> io::Result<(ExitStatus, Vec<u8>, Vec<u8>)> {
     .map_err(wasmos::io_error)?;
 
     let mut raw_status = 0;
-    wasmos::waitpid(child_pid as i32, &mut raw_status).map_err(wasmos::io_error)?;
+    waitpid(child_pid as i32, &mut raw_status)?;
     let stdout = fs::read(&stdout_path)?;
     let stderr = fs::read(&stderr_path)?;
     let _ = fs::remove_file(&stdout_path);
@@ -677,7 +677,7 @@ impl Process {
 
     pub fn wait(&mut self) -> io::Result<ExitStatus> {
         let mut raw_status = 0;
-        wasmos::waitpid(self.pid as i32, &mut raw_status).map_err(wasmos::io_error)?;
+        waitpid(self.pid as i32, &mut raw_status)?;
         Ok(ExitStatus::new(raw_status))
     }
 
@@ -687,6 +687,16 @@ impl Process {
             Ok(0) => Ok(None),
             Ok(_) => Ok(Some(ExitStatus::new(raw_status))),
             Err(errno) => Err(wasmos::io_error(errno)),
+        }
+    }
+}
+
+fn waitpid(pid: i32, raw_status: &mut i32) -> io::Result<()> {
+    loop {
+        match wasmos::waitpid(pid, raw_status) {
+            Err(errno) if errno == wasmos::EINTR => continue,
+            Err(errno) => return Err(wasmos::io_error(errno)),
+            Ok(_) => return Ok(()),
         }
     }
 }

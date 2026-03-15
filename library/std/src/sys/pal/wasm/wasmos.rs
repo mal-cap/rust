@@ -140,11 +140,21 @@ pub fn close(fd: i32) -> Result<(), Errno> {
 }
 
 pub fn read(fd: i32, buf: &mut [u8]) -> Result<usize, Errno> {
-    call(SYS_READ, fd, buf.as_mut_ptr() as i32, buf.len() as i32, 0, 0, 0).map(|v| v as usize)
+    loop {
+        match call(SYS_READ, fd, buf.as_mut_ptr() as i32, buf.len() as i32, 0, 0, 0) {
+            Err(EINTR) => continue,
+            other => return other.map(|v| v as usize),
+        }
+    }
 }
 
 pub fn write(fd: i32, buf: &[u8]) -> Result<usize, Errno> {
-    call(SYS_WRITE, fd, buf.as_ptr() as i32, buf.len() as i32, 0, 0, 0).map(|v| v as usize)
+    loop {
+        match call(SYS_WRITE, fd, buf.as_ptr() as i32, buf.len() as i32, 0, 0, 0) {
+            Err(EINTR) => continue,
+            other => return other.map(|v| v as usize),
+        }
+    }
 }
 
 pub fn seek(fd: i32, offset: i32, whence: i32) -> Result<u64, Errno> {
