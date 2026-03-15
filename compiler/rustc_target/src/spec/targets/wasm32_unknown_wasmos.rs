@@ -11,6 +11,8 @@ pub(crate) fn target() -> Target {
         &[
             "--import-memory",
             "--export-memory",
+            "--export=__tls_size",
+            "--export=__tls_align",
             "--shared-memory",
             "--max-memory=1073741824",
             "--no-entry",
@@ -22,6 +24,8 @@ pub(crate) fn target() -> Target {
             "--target=wasm32-unknown-unknown",
             "-Wl,--import-memory",
             "-Wl,--export-memory",
+            "-Wl,--export=__tls_size",
+            "-Wl,--export=__tls_align",
             "-Wl,--shared-memory",
             "-Wl,--max-memory=1073741824",
             "-Wl,--no-entry",
