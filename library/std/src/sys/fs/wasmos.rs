@@ -658,7 +658,7 @@ fn set_times_impl(path: &Path, times: FileTimes, flags: i32) -> io::Result<()> {
             }
             Some(t) => {
                 let ns = t
-                    .duration_since(UNIX_EPOCH)
+                    .sub_time(&UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_nanos() as u64;
                 let sec = (ns / 1_000_000_000) as i64;
