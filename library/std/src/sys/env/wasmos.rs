@@ -50,7 +50,7 @@ fn load_env() -> Vec<(OsString, OsString)> {
     }
 
     let mut vars = Vec::new();
-    for entry in scratch.split(|byte| *byte == b'\n') {
+    for entry in scratch.split(|byte| *byte == 0) {
         if entry.is_empty() {
             continue;
         }
