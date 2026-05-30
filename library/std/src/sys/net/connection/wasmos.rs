@@ -22,14 +22,18 @@ fn unsupported_socket_option<T>() -> io::Result<T> {
 }
 
 fn wait_socket(fd: i32, events: i16) -> io::Result<()> {
-    let mut pollfd = wasmos::PollFd {
-        fd,
-        events,
-        revents: 0,
-    };
-    wasmos::poll(crate::slice::from_mut(&mut pollfd), -1)
-        .map(|_| ())
-        .map_err(wasmos::io_error)
+    loop {
+        let mut pollfd = wasmos::PollFd {
+            fd,
+            events,
+            revents: 0,
+        };
+        match wasmos::poll(crate::slice::from_mut(&mut pollfd), -1) {
+            Ok(_) => return Ok(()),
+            Err(errno) if errno == wasmos::EINTR => continue,
+            Err(errno) => return Err(wasmos::io_error(errno)),
+        }
+    }
 }
 
 fn format_addr(addr: &SocketAddr) -> io::Result<String> {
@@ -183,6 +187,7 @@ impl TcpStream {
                 Err(errno) if errno == wasmos::EAGAIN => {
                     wait_socket(self.inner.as_raw_fd(), wasmos::POLLIN)?
                 }
+                Err(errno) if errno == wasmos::EINTR => continue,
                 Err(errno) => return Err(wasmos::io_error(errno)),
             }
         }
@@ -207,6 +212,7 @@ impl TcpStream {
                 Err(errno) if errno == wasmos::EAGAIN => {
                     wait_socket(self.inner.as_raw_fd(), wasmos::POLLOUT)?
                 }
+                Err(errno) if errno == wasmos::EINTR => continue,
                 Err(errno) => return Err(wasmos::io_error(errno)),
             }
         }
@@ -361,6 +367,7 @@ impl TcpListener {
                 Err(errno) if errno == wasmos::EAGAIN => {
                     wait_socket(self.inner.as_raw_fd(), wasmos::POLLIN)?
                 }
+                Err(errno) if errno == wasmos::EINTR => continue,
                 Err(errno) => return Err(wasmos::io_error(errno)),
             }
         };

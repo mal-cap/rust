@@ -95,6 +95,26 @@ pub const POLLERR: i16 = 0x0008;
 pub const POLLHUP: i16 = 0x0010;
 pub const FUTEX_WAIT_FOREVER: u32 = u32::MAX;
 
+/// Wire layout of the kernel StatBuf (repr C, 72 bytes).
+/// Matches `kernel-core/src/vfs/file_ops.rs` `StatBuf` exactly.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StatBuf {
+    pub file_type: u32,
+    pub mode: u32,
+    pub nlink: u32,
+    pub _pad0: u32,
+    pub size: u64,
+    pub inode_id: u32,
+    pub _pad1: u32,
+    pub atime_ns: u64,
+    pub mtime_ns: u64,
+    pub ctime_ns: u64,
+    pub uid: u32,
+    pub gid: u32,
+    pub rdev: u64,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PollFd {
@@ -126,7 +146,10 @@ pub fn io_error(errno: Errno) -> io::Error {
 }
 
 #[inline]
-fn call_path<T>(path: &OsStr, tail: impl FnOnce(*const u8, usize) -> Result<T, Errno>) -> Result<T, Errno> {
+fn call_path<T>(
+    path: &OsStr,
+    tail: impl FnOnce(*const u8, usize) -> Result<T, Errno>,
+) -> Result<T, Errno> {
     let bytes = path.as_encoded_bytes();
     tail(bytes.as_ptr(), bytes.len())
 }
@@ -161,20 +184,20 @@ pub fn seek(fd: i32, offset: i32, whence: i32) -> Result<u64, Errno> {
     call(SYS_SEEK, fd, offset, whence, 0, 0, 0).map(|v| v as u32 as u64)
 }
 
-pub fn stat(path: &OsStr, buf: &mut [u8]) -> Result<(), Errno> {
+pub fn stat(path: &OsStr, buf: &mut StatBuf) -> Result<(), Errno> {
     call_path(path, |ptr, len| {
-        call(SYS_STAT, ptr as i32, len as i32, buf.as_mut_ptr() as i32, 0, 0, 0).map(|_| ())
+        call(SYS_STAT, ptr as i32, len as i32, buf as *mut StatBuf as i32, 0, 0, 0).map(|_| ())
     })
 }
 
-pub fn lstat(path: &OsStr, buf: &mut [u8]) -> Result<(), Errno> {
+pub fn lstat(path: &OsStr, buf: &mut StatBuf) -> Result<(), Errno> {
     call_path(path, |ptr, len| {
-        call(SYS_LSTAT, ptr as i32, len as i32, buf.as_mut_ptr() as i32, 0, 0, 0).map(|_| ())
+        call(SYS_LSTAT, ptr as i32, len as i32, buf as *mut StatBuf as i32, 0, 0, 0).map(|_| ())
     })
 }
 
-pub fn fstat(fd: i32, buf: &mut [u8]) -> Result<(), Errno> {
-    call(SYS_FSTAT, fd, buf.as_mut_ptr() as i32, 0, 0, 0, 0).map(|_| ())
+pub fn fstat(fd: i32, buf: &mut StatBuf) -> Result<(), Errno> {
+    call(SYS_FSTAT, fd, buf as *mut StatBuf as i32, 0, 0, 0, 0).map(|_| ())
 }
 
 pub fn mkdir(path: &OsStr) -> Result<(), Errno> {
@@ -259,7 +282,9 @@ pub fn symlink(target: &OsStr, link_path: &OsStr) -> Result<(), Errno> {
 }
 
 pub fn chmod(path: &OsStr, mode: u32) -> Result<(), Errno> {
-    call_path(path, |ptr, len| call(SYS_CHMOD, ptr as i32, len as i32, mode as i32, 0, 0, 0).map(|_| ()))
+    call_path(path, |ptr, len| {
+        call(SYS_CHMOD, ptr as i32, len as i32, mode as i32, 0, 0, 0).map(|_| ())
+    })
 }
 
 pub fn fchmod(fd: i32, mode: u32) -> Result<(), Errno> {
@@ -271,16 +296,8 @@ pub fn fchmod(fd: i32, mode: u32) -> Result<(), Errno> {
 /// UTIME_OMIT (0x3ffffffe) in tv_nsec means do not change that timestamp.
 pub fn utimensat(dirfd: i32, path: &OsStr, times_buf: &[u8; 32], flags: i32) -> Result<(), Errno> {
     call_path(path, |ptr, len| {
-        call(
-            SYS_UTIMENSAT,
-            dirfd,
-            ptr as i32,
-            len as i32,
-            times_buf.as_ptr() as i32,
-            flags,
-            0,
-        )
-        .map(|_| ())
+        call(SYS_UTIMENSAT, dirfd, ptr as i32, len as i32, times_buf.as_ptr() as i32, flags, 0)
+            .map(|_| ())
     })
 }
 
@@ -294,16 +311,8 @@ pub fn fsync(fd: i32) -> Result<(), Errno> {
 
 pub fn readlink(path: &OsStr, buf: &mut [u8]) -> Result<usize, Errno> {
     call_path(path, |ptr, len| {
-        call(
-            SYS_READLINK,
-            ptr as i32,
-            len as i32,
-            buf.as_mut_ptr() as i32,
-            buf.len() as i32,
-            0,
-            0,
-        )
-        .map(|v| v as usize)
+        call(SYS_READLINK, ptr as i32, len as i32, buf.as_mut_ptr() as i32, buf.len() as i32, 0, 0)
+            .map(|v| v as usize)
     })
 }
 
@@ -318,16 +327,7 @@ pub fn getarg(index: usize, buf: &mut [u8]) -> Result<usize, Errno> {
 
 pub fn clock_gettime(clock_id: u32) -> Result<u64, Errno> {
     let mut out = 0u64;
-    call(
-        SYS_CLOCK_GETTIME,
-        clock_id as i32,
-        (&mut out as *mut u64) as i32,
-        0,
-        0,
-        0,
-        0,
-    )
-    .map(|_| out)
+    call(SYS_CLOCK_GETTIME, clock_id as i32, (&mut out as *mut u64) as i32, 0, 0, 0, 0).map(|_| out)
 }
 
 pub fn sleep_ms(ms: u32) {
@@ -381,16 +381,8 @@ pub fn dns_resolve(host: &str, out: &mut [u8]) -> Result<usize, Errno> {
 
 pub fn getenv(name: &OsStr, buf: &mut [u8]) -> Result<usize, Errno> {
     call_path(name, |ptr, len| {
-        call(
-            SYS_GETENV,
-            ptr as i32,
-            len as i32,
-            buf.as_mut_ptr() as i32,
-            buf.len() as i32,
-            0,
-            0,
-        )
-        .map(|v| v as usize)
+        call(SYS_GETENV, ptr as i32, len as i32, buf.as_mut_ptr() as i32, buf.len() as i32, 0, 0)
+            .map(|v| v as usize)
     })
 }
 
@@ -445,29 +437,11 @@ pub fn clone_thread(
 }
 
 pub fn futex_wait(addr: *mut i32, expected: u32, timeout_ticks: u32) -> Result<(), Errno> {
-    call(
-        SYS_FUTEX_WAIT,
-        addr as i32,
-        expected as i32,
-        0,
-        timeout_ticks as i32,
-        0,
-        0,
-    )
-    .map(|_| ())
+    call(SYS_FUTEX_WAIT, addr as i32, expected as i32, 0, timeout_ticks as i32, 0, 0).map(|_| ())
 }
 
 pub fn futex_wake(addr: *mut i32, count: u32) -> Result<u32, Errno> {
-    call(
-        SYS_FUTEX_WAKE,
-        addr as i32,
-        count as i32,
-        0,
-        0,
-        0,
-        0,
-    )
-    .map(|v| v as u32)
+    call(SYS_FUTEX_WAKE, addr as i32, count as i32, 0, 0, 0, 0).map(|v| v as u32)
 }
 
 pub fn waitpid(pid: i32, status: &mut i32) -> Result<i32, Errno> {
@@ -475,15 +449,7 @@ pub fn waitpid(pid: i32, status: &mut i32) -> Result<i32, Errno> {
 }
 
 pub fn waitpid_nohang(pid: i32, status: &mut i32) -> Result<i32, Errno> {
-    call(
-        SYS_WAIT,
-        pid,
-        status as *mut i32 as i32,
-        WAIT_WNOHANG,
-        0,
-        0,
-        0,
-    )
+    call(SYS_WAIT, pid, status as *mut i32 as i32, WAIT_WNOHANG, 0, 0, 0)
 }
 
 pub fn kill(pid: u32, signal: i32) -> Result<(), Errno> {
@@ -491,15 +457,7 @@ pub fn kill(pid: u32, signal: i32) -> Result<(), Errno> {
 }
 
 pub fn poll(fds: &mut [PollFd], timeout_ms: i32) -> Result<i32, Errno> {
-    call(
-        SYS_POLL,
-        fds.as_mut_ptr() as i32,
-        fds.len() as i32,
-        timeout_ms,
-        0,
-        0,
-        0,
-    )
+    call(SYS_POLL, fds.as_mut_ptr() as i32, fds.len() as i32, timeout_ms, 0, 0, 0)
 }
 
 pub fn posix_spawn(
@@ -524,23 +482,15 @@ pub fn posix_spawn(
     .map(|v| v as u32)
 }
 
-// execve uses musl-style ABI: a0=path_ptr (null-terminated), a1=argv_ptr
-// (null-terminated array of pointers to null-terminated strings), a2=envp_ptr
-// (ignored by kernel — env is inherited), a3=0 (argv_count=0 triggers musl path).
+// execve uses the canonical musl-style ABI: a0=path_ptr (null-terminated),
+// a1=argv_ptr (null-terminated array of pointers to null-terminated strings),
+// a2=envp_ptr (currently ignored by the kernel), a3=0.
 pub fn execve(path: &OsStr, argv_ptr: *const u32, envp_ptr: *const u32) -> Result<(), Errno> {
     let mut path_buf = Vec::with_capacity(path.as_encoded_bytes().len() + 1);
     path_buf.extend_from_slice(path.as_encoded_bytes());
     path_buf.push(0);
-    call(
-        SYS_EXECVE,
-        path_buf.as_ptr() as i32,
-        argv_ptr as i32,
-        envp_ptr as i32,
-        0,
-        0,
-        0,
-    )
-    .map(|_| ())
+    call(SYS_EXECVE, path_buf.as_ptr() as i32, argv_ptr as i32, envp_ptr as i32, 0, 0, 0)
+        .map(|_| ())
 }
 
 pub fn getppid() -> u32 {

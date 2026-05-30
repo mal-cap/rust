@@ -10,12 +10,14 @@ pub use crate::sys::fs::common::{Dir, copy, exists, remove_dir_all};
 use crate::sys::fd::FileDesc;
 use crate::sys::path;
 use crate::sys::time::{SystemTime, UNIX_EPOCH};
-use crate::sys::{AsInner, FromInner, IntoInner, unsupported, unsupported_err, wasmos};
+use crate::sys::{
+    AsInner, FromInner, IntoInner, unsupported, unsupported_err,
+    wasmos::{self, StatBuf},
+};
 use crate::time::Duration;
 use crate::vec;
 use crate::vec::Vec;
 
-const STAT_BUF_LEN: usize = 72;
 const FT_REG: u8 = 0;
 const FT_DIR: u8 = 1;
 const FT_CHR: u8 = 2;
@@ -36,10 +38,9 @@ pub struct FilePermissions {
     mode: u32,
 }
 
-#[repr(transparent)]
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct FileAttr {
-    raw: [u8; STAT_BUF_LEN],
+    raw: StatBuf,
 }
 
 pub struct ReadDir {
@@ -80,14 +81,6 @@ pub struct DirBuilder {
     mode: u32,
 }
 
-fn read_u32(buf: &[u8], offset: usize) -> u32 {
-    u32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap())
-}
-
-fn read_u64(buf: &[u8], offset: usize) -> u64 {
-    u64::from_le_bytes(buf[offset..offset + 8].try_into().unwrap())
-}
-
 fn system_time_from_ns(ns: u64) -> io::Result<SystemTime> {
     UNIX_EPOCH
         .checked_add_duration(&Duration::from_nanos(ns))
@@ -95,7 +88,7 @@ fn system_time_from_ns(ns: u64) -> io::Result<SystemTime> {
 }
 
 fn stat_inner(path: &Path, follow: bool) -> io::Result<FileAttr> {
-    let mut raw = [0u8; STAT_BUF_LEN];
+    let mut raw = StatBuf::default();
     let res = if follow {
         wasmos::stat(path.as_os_str(), &mut raw)
     } else {
@@ -106,7 +99,7 @@ fn stat_inner(path: &Path, follow: bool) -> io::Result<FileAttr> {
 }
 
 fn fstat_inner(fd: i32) -> io::Result<FileAttr> {
-    let mut raw = [0u8; STAT_BUF_LEN];
+    let mut raw = StatBuf::default();
     wasmos::fstat(fd, &mut raw).map_err(wasmos::io_error)?;
     Ok(FileAttr { raw })
 }
@@ -163,27 +156,27 @@ impl FilePermissions {
 
 impl FileAttr {
     pub fn size(&self) -> u64 {
-        read_u64(&self.raw, 16)
+        self.raw.size
     }
 
     pub fn perm(&self) -> FilePermissions {
-        FilePermissions { mode: read_u32(&self.raw, 4) }
+        FilePermissions { mode: self.raw.mode }
     }
 
     pub fn file_type(&self) -> FileType {
-        FileType { raw: read_u32(&self.raw, 0) as u8 }
+        FileType { raw: self.raw.file_type as u8 }
     }
 
     pub fn modified(&self) -> io::Result<SystemTime> {
-        system_time_from_ns(read_u64(&self.raw, 40))
+        system_time_from_ns(self.raw.mtime_ns)
     }
 
     pub fn accessed(&self) -> io::Result<SystemTime> {
-        system_time_from_ns(read_u64(&self.raw, 32))
+        system_time_from_ns(self.raw.atime_ns)
     }
 
     pub fn created(&self) -> io::Result<SystemTime> {
-        system_time_from_ns(read_u64(&self.raw, 48))
+        system_time_from_ns(self.raw.ctime_ns)
     }
 }
 
@@ -249,7 +242,7 @@ impl DirEntry {
     }
 
     pub fn ino(&self) -> u64 {
-        self.metadata().map(|meta| read_u64(&meta.raw, 24)).unwrap_or(0)
+        self.metadata().map(|meta| meta.raw.inode_id as u64).unwrap_or(0)
     }
 }
 
